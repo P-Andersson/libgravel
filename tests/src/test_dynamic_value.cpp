@@ -230,6 +230,29 @@ namespace {
 		std::array<std::uint8_t, ExtraSize - sizeof(m_multiplier)> m_extra_buffer;
 	};
 
+	class AbstractBase
+	{
+	public:
+		virtual int get_value() = 0;
+	};
+
+	class ConcreteChild : public AbstractBase
+	{
+	public:
+		ConcreteChild(int value)
+			: m_value(value)
+		{
+
+		}
+
+		int get_value() override
+		{
+			return m_value;
+		}
+	private:
+		int m_value;
+	};
+
 	template <typename T>
 	bool is_inside(T* object, void* ptr)
 	{
@@ -672,6 +695,52 @@ TEST_CASE("Local and Heap")
 			REQUIRE(is_inside(&value, &value.get()));
 			value = FlexibleSizeChild<32, 33>(nullptr);
 			REQUIRE(!is_inside(&value, &value.get()));
+		}
+	}
+}
+
+TEST_CASE("Abstract Base")
+{
+	SECTION("Make by emplace")
+	{
+		dynamic_value<AbstractBase> value = make_dynamic_value<AbstractBase, ConcreteChild>(12);
+
+		REQUIRE(value->get_value() == 12);
+	}
+	SECTION("Make by copy")
+	{
+		ConcreteChild child(51);
+		dynamic_value<AbstractBase> value(child);
+
+		REQUIRE(value->get_value() == 51);
+	}
+	SECTION("Make by move")
+	{
+		dynamic_value<AbstractBase> value(ConcreteChild(51));
+
+		REQUIRE(value->get_value() == 51);
+	}
+
+	SECTION("Assignment")
+	{
+		dynamic_value<AbstractBase> value = make_dynamic_value<AbstractBase, ConcreteChild>(1);
+		SECTION("Emplace")
+		{
+			value.emplace<ConcreteChild>(13);
+			REQUIRE(value->get_value() == 13);
+		}
+		SECTION("Copy")
+		{
+			ConcreteChild child(51);
+			value = child;
+
+			REQUIRE(value->get_value() == 51);
+		}
+		SECTION("Move")
+		{
+			value = ConcreteChild(51);
+
+			REQUIRE(value->get_value() == 51);
 		}
 	}
 

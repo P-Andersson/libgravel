@@ -8,8 +8,8 @@ namespace gravel
 	concept IsBaseOf = std::is_same<BaseT, T>::value || std::is_base_of<BaseT, T>::value;
 
 	template<typename T>
-	concept CopyConstructible = std::is_copy_constructible<T>::value;
+	concept CopyConstructible = std::is_copy_constructible<T>::value || std::is_abstract<T>::value;
 
 	template<typename T>
-	concept MoveConstructible = std::is_move_constructible<T>::value;
+	concept MoveConstructible = std::is_move_constructible<T>::value || std::is_abstract<T>::value;
 }
