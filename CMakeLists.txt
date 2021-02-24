@@ -1,3 +1,6 @@
+cmake_minimum_required(VERSION 3.18)
+project(libgravel)
+
 add_library(gravel INTERFACE)
 
 target_include_directories(gravel INTERFACE include)
