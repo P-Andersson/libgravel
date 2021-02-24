@@ -44,7 +44,7 @@ private:
 
 int main(int argc, char** argv)
 {
-   dynamic_value<MyBase> value = gravel::make_dynamic_value<MyBase, MyChild>(4);
+   gravel::dynamic_value<MyBase> value = gravel::make_dynamic_value<MyBase, MyChild>(4);
    std::cout << value->get_my_id();
 }
 ```
