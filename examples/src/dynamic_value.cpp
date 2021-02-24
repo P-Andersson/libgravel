@@ -5,7 +5,6 @@
 class MyBase
 {
 public:
-   virtual ~MyBase() = default;
    virtual int get_my_id() const = 0;
 };
 
@@ -27,6 +26,6 @@ private:
 
 int main(int argc, char** argv)
 {
-   gravel::dynamic_value<MyBase> value(MyChild(4));
+   gravel::dynamic_value<MyBase> value = gravel::make_dynamic_value<MyBase, MyChild>(4);
    std::cout << value->get_my_id();
 }

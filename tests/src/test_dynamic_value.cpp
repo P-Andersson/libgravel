@@ -547,7 +547,7 @@ TEST_CASE("Local and Heap")
 		SECTION("Emplaced")
 		{
 			{
-				auto value = make_dynamic_value<FlexibleSizeBase<64>, FlexibleSizeBase<64>, 32>(&dcounter);
+				auto value = make_dynamic_value<FlexibleSizeBase<64>, FlexibleSizeBase<64>, BufferSize<32>>(&dcounter);
 				REQUIRE(!is_inside(&value, &value.get()));
 			}
 			REQUIRE(dcounter == 1);
@@ -556,7 +556,7 @@ TEST_CASE("Local and Heap")
 		{
 			{
 				FlexibleSizeBase<64> orig(&dcounter);
-				auto value = dynamic_value<FlexibleSizeBase<64>, 32>(orig);
+				auto value = dynamic_value<FlexibleSizeBase<64>, BufferSize<32>>(orig);
 				REQUIRE(!is_inside(&value, &value.get()));
 			}
 			REQUIRE(dcounter == 2);
@@ -564,7 +564,7 @@ TEST_CASE("Local and Heap")
 		SECTION("Moved")
 		{
 			{
-				auto value = dynamic_value<FlexibleSizeBase<64>, 32>(FlexibleSizeBase<64>(&dcounter));
+				auto value = dynamic_value<FlexibleSizeBase<64>, BufferSize<32>>(FlexibleSizeBase<64>(&dcounter));
 				REQUIRE(!is_inside(&value, &value.get()));
 			}
 			REQUIRE(dcounter == 2);
@@ -574,7 +574,7 @@ TEST_CASE("Local and Heap")
 	{
 		SECTION("Emplaced")
 		{
-			auto value = make_dynamic_value<FlexibleSizeBase<64>, FlexibleSizeBase<64>, 32>(nullptr, 4);
+			auto value = make_dynamic_value<FlexibleSizeBase<64>, FlexibleSizeBase<64>, BufferSize<32>>(nullptr, 4);
 			REQUIRE(!is_inside(&value, &value.get()));
 
 			//REQUIRE(dyn_val->m_creation == CreationMethod::Moved);
@@ -585,7 +585,7 @@ TEST_CASE("Local and Heap")
 		SECTION("Copied")
 		{
 			FlexibleSizeBase<64> orig(nullptr, 9);
-			auto value = dynamic_value<FlexibleSizeBase<64>, 32>(orig);
+			auto value = dynamic_value<FlexibleSizeBase<64>, BufferSize<32>>(orig);
 			REQUIRE(!is_inside(&value, &value.get()));
 
 			//REQUIRE(dyn_val->m_creation == CreationMethod::Moved);
@@ -595,7 +595,7 @@ TEST_CASE("Local and Heap")
 		}
 		SECTION("Moved")
 		{
-			auto value = dynamic_value<FlexibleSizeBase<64>, 32>(FlexibleSizeBase<64>(nullptr, 18));
+			auto value = dynamic_value<FlexibleSizeBase<64>, BufferSize<32>>(FlexibleSizeBase<64>(nullptr, 18));
 			REQUIRE(!is_inside(&value, &value.get()));
 			//REQUIRE(dyn_val->m_creation == CreationMethod::Moved);
 			REQUIRE(value->m_val == 18);
@@ -611,7 +611,7 @@ TEST_CASE("Local and Heap")
 		SECTION("Emplaced")
 		{
 			{
-				auto value = make_dynamic_value<FlexibleSizeBase<32>, FlexibleSizeChild<32, 32>, 32>(&dcounter);
+				auto value = make_dynamic_value<FlexibleSizeBase<32>, FlexibleSizeChild<32, 32>, BufferSize<32>>(&dcounter);
 				REQUIRE(!is_inside(&value, &value.get()));
 
 				//REQUIRE(dyn_val->m_creation == CreationMethod::Moved);
@@ -625,7 +625,7 @@ TEST_CASE("Local and Heap")
 		{
 			{
 				FlexibleSizeChild<24, 32> orig(&dcounter);
-				auto value = dynamic_value<FlexibleSizeBase<24>, 32>(orig);
+				auto value = dynamic_value<FlexibleSizeBase<24>, BufferSize<32>>(orig);
 				REQUIRE(!is_inside(&value, &value.get()));
 
 				//REQUIRE(dyn_val->m_creation == CreationMethod::Moved);
@@ -638,7 +638,7 @@ TEST_CASE("Local and Heap")
 		SECTION("Moved")
 		{
 			{
-				auto value = dynamic_value<FlexibleSizeBase<24>, 32>(FlexibleSizeChild<24, 32>(&dcounter));
+				auto value = dynamic_value<FlexibleSizeBase<24>, BufferSize<32>>(FlexibleSizeChild<24, 32>(&dcounter));
 				REQUIRE(!is_inside(&value, &value.get()));
 
 				//REQUIRE(dyn_val->m_creation == CreationMethod::Moved);
@@ -654,21 +654,21 @@ TEST_CASE("Local and Heap")
 	{
 		SECTION("Emplaced Local")
 		{
-			auto value = make_dynamic_value<FlexibleSizeBase<32>, FlexibleSizeChild<32, 33>, 64>(nullptr);
+			auto value = make_dynamic_value<FlexibleSizeBase<32>, FlexibleSizeChild<32, 33>, BufferSize<64> >(nullptr);
 			REQUIRE(!is_inside(&value, &value.get()));
 			value.emplace<FlexibleSizeChild<32, 16>>(nullptr);
 			REQUIRE(is_inside(&value, &value.get()));
 		}
 		SECTION("Emplaced Non-Local")
 		{
-			auto value = make_dynamic_value<FlexibleSizeBase<32>, FlexibleSizeChild<32, 16>, 64>(nullptr);
+			auto value = make_dynamic_value<FlexibleSizeBase<32>, FlexibleSizeChild<32, 16>, BufferSize<64>>(nullptr);
 			REQUIRE(is_inside(&value, &value.get()));
 			value.emplace<FlexibleSizeChild<32, 33>>(nullptr);
 			REQUIRE(!is_inside(&value, &value.get()));
 		}
 		SECTION("Copy Local")
 		{
-			auto value = make_dynamic_value<FlexibleSizeBase<32>, FlexibleSizeChild<32, 33>, 64>(nullptr);
+			auto value = make_dynamic_value<FlexibleSizeBase<32>, FlexibleSizeChild<32, 33>, BufferSize<64>>(nullptr);
 			REQUIRE(!is_inside(&value, &value.get()));
 			FlexibleSizeChild<32, 16> cpy(nullptr);
 			value = cpy;
@@ -676,7 +676,7 @@ TEST_CASE("Local and Heap")
 		}
 		SECTION("Copy Non-Local")
 		{
-			auto value = make_dynamic_value<FlexibleSizeBase<32>, FlexibleSizeChild<32, 16>, 64>(nullptr);
+			auto value = make_dynamic_value<FlexibleSizeBase<32>, FlexibleSizeChild<32, 16>, BufferSize<64>>(nullptr);
 			REQUIRE(is_inside(&value, &value.get()));
 			FlexibleSizeChild<32, 33> cpy(nullptr);
 			value = cpy;
@@ -684,14 +684,14 @@ TEST_CASE("Local and Heap")
 		}
 		SECTION("Move Local")
 		{
-			auto value = make_dynamic_value<FlexibleSizeBase<32>, FlexibleSizeChild<32, 33>, 64>(nullptr);
+			auto value = make_dynamic_value<FlexibleSizeBase<32>, FlexibleSizeChild<32, 33>, BufferSize<64>>(nullptr);
 			REQUIRE(!is_inside(&value, &value.get()));
 			value = FlexibleSizeChild<32, 16>(nullptr);
 			REQUIRE(is_inside(&value, &value.get()));
 		}
 		SECTION("Move Non-Local")
 		{
-			auto value = make_dynamic_value<FlexibleSizeBase<32>, FlexibleSizeChild<32, 16>, 64>(nullptr);
+			auto value = make_dynamic_value<FlexibleSizeBase<32>, FlexibleSizeChild<32, 16>, BufferSize<64>>(nullptr);
 			REQUIRE(is_inside(&value, &value.get()));
 			value = FlexibleSizeChild<32, 33>(nullptr);
 			REQUIRE(!is_inside(&value, &value.get()));

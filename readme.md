@@ -13,7 +13,7 @@ The following features are currently a part of libgravel.
 Provides runtime polymorphic value types, that uses small buffer optimization to reduce the number
 of allocations. 
 
-Usage example:
+Usage example, when created using the make_dynamic_value function:
 
 ```
 #include <gravel/dynamic_value.hpp>
@@ -44,7 +44,7 @@ private:
 
 int main(int argc, char** argv)
 {
-   auto value = gravel::make_dynamic_value<MyBase, MyChild>(4);
+   dynamic_value<MyBase> value = gravel::make_dynamic_value<MyBase, MyChild>(4);
    std::cout << value->get_my_id();
 }
 ```

@@ -18,13 +18,13 @@ namespace gravel
 			virtual void move(std::span<std::uint8_t> small_buffer, std::span<std::uint8_t> op_table, bool& out_local, BaseT* src, bool src_local) const = 0;
 		};
 
-		template <typename BaseT, typename SubT>
+		template <typename BaseT, typename SubT, typename properties>
 		class OperationsTable : public IOperationsTable<BaseT>
 		{
 		public:
 			void move(std::span<std::uint8_t> small_buffer, std::span<std::uint8_t> op_table, bool& out_local, BaseT* src, bool src_local) const override
 			{
-				if constexpr (std::is_move_constructible<BaseT>::value)
+				if constexpr (properties::moveable)
 				{
 					SubT* casted_source = static_cast<SubT*>(src);
 					if (sizeof(SubT) > small_buffer.size_bytes())
@@ -46,13 +46,13 @@ namespace gravel
 						out_local = true;
 						new (small_buffer.data()) SubT(std::move(*casted_source));
 					}
-					new (op_table.data()) OperationsTable<BaseT, SubT>();
+					new (op_table.data()) OperationsTable<BaseT, SubT, properties>();
 				}
 			}
 
 			void clone(std::span<std::uint8_t> small_buffer, std::span<std::uint8_t> op_table, bool& out_local, const BaseT* src) const override
 			{
-				if constexpr (std::is_copy_constructible<BaseT>::value)
+				if constexpr (properties::copyable)
 				{
 					const SubT* casted_source = static_cast<const SubT*>(src);
 					if (sizeof(SubT) > small_buffer.size_bytes())
@@ -66,7 +66,7 @@ namespace gravel
 						out_local = true;
 						new (small_buffer.data()) SubT(*casted_source);
 					}
-					new (op_table.data()) OperationsTable<BaseT, SubT>();
+					new (op_table.data()) OperationsTable<BaseT, SubT, properties>();
 				}
 			}
 		};

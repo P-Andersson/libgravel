@@ -6,20 +6,12 @@
 #include <cstring>
 
 #include "detail/concepts.hpp"
+#include "detail/dynamic_value_properties.hpp"
 #include "detail/operations_table.hpp"
 
 namespace gravel
 {
-	//!
-	//! Computes the default small buffer size of a given type
-	//! @tparam T	the type to compute the small buffer size as
-	//! @returns the computed size
-	//! 
-	template <typename T>
-	std::size_t consteval default_buffer_size()
-	{
-		return std::max(sizeof(T) + sizeof(void*), 4 * sizeof(void*));
-	}
+
 	//!
 	//! Supports dynamic object polymorphism in a value-based way leveraging your compilers standard method of handling 
 	//! it (typically vtables).
@@ -36,30 +28,32 @@ namespace gravel
 	//! 
 	//! * After created by a constructor, it is guaranteed to hold a valid value. Thus there is no null value,
 	//!   you should wrap it in a std::optional if you want that for a certain use case.
-	//! * If the Base type has a copy constructor or is abstract, the dynamic value is copyable. Child types that are not
-	//!   copyable will not be possible to assign to this dynamic value.
-	//! * If the Base type has a copy constructor, a move constructor or is abstract, the dynamic value is movable. Child types that are neither
-	//!   movable or copyable will not be possible to assign to this dynamic value.
+	//! * Whether the dynamic_value is moveable or copyable is controlled by the dynamic value types Property template argument
+	//! * If copyable, only concrete types with copy constructors can be assigned to the dynamic value
+	//! * If moveable, only concrete types with move constructors can be assigned to the dynamic value
+	//! * Only non-abstract types of type BaseT or inheriting from a BaseT (directly or indirectly) can be assigned to the dynamic value
 	//! * Any instance moved or copied into the dynamic_value will be copied by it's copy constructor and moved by either it's move constructor or by
-	//!   internal pointer swap, f too large for small buffer optimization. The copy assignment operator and the move assignment will never be used.
+	//!   internal pointer swap (if too large for small buffer optimization). The copy assignment operator and the move assignment will never be used.
 	//! * A moved dynamic_value is safe to emplace or otherwise assign to, but NOT safe to use.
 	//! 
 	//! @tparam BaseT the Base type that the dynamic_value shall hold
-	//! @tparam SmallObjectSize	the size to reserve in the instance of this type itself for object data. 
-	//!                           Objects of this size or smaller will not be placed on the heap
-	//!
-	template <typename BaseT, size_t SmallObjectSize = default_buffer_size<BaseT>()>
-	class dynamic_value
+	//! @tparam PropertiesT	must be a specialization of gravel::Properties which as the following configuration options:
+	//!				* Attributes:	controls if the dynamic_value should be moveable, copyable, both or neither. Can be:
+	//!							Attr::None - dynamic_value is not copyable nor moveable
+	//!							Attr::Copyable	- dynamic_value is copyable but not moveable, moves will be treated as a copy
+	//!							Attr::Moveable	- dynamic_value is moveable but not copyable
+	//!							Attr::Default	- dynamic_value is copyable if BaseT is abstract or has a copy constructor, it is moveable
+	//!                                                    if BaseT is abstract or has a move constructor
+	//!				* SmallBufferSize:	objects with a size of this or smaller will not do a heap allocation if put into the dynamic value, if 0
+	//!											an object appropiate size will automatically selected. Must be at least the same size as sizeof(BaseT*)
+	//!				Defaults to Attr::Default and 0
+	template <typename BaseT, typename PropertiesT = Properties<> >
+	class dynamic_value 
 	{
 	public:
-		static_assert(SmallObjectSize >= sizeof(BaseT*));
+		using properties = DynamicValProperties<BaseT, PropertiesT>;
+		static_assert(properties::small_buffer_size >= sizeof(BaseT*));
 
-		//! Marks if this type can be copied or not
-		static const bool copyable = CopyConstructible<BaseT>;
-		//! Marks if this type can be moved or not
-		static const bool moveable = MoveConstructible<BaseT>;
-		//! Holds the amount of space reserved locally for small objects, in bytes
-		static const std::size_t small_object_size = SmallObjectSize;
 
 		//!
 		//! Constructor, copy-constructs an object as the held value
@@ -67,7 +61,7 @@ namespace gravel
 		//! @param other	the object to copy from
 		//! 
 		template <typename T> 
-		explicit dynamic_value(const T& other) requires IsBaseOf<BaseT, std::decay_t<T>> && CopyConstructible<BaseT>
+		explicit dynamic_value(const T& other) requires IsBaseOf<BaseT, std::decay_t<T>> && properties::copyable
 			: m_local(false)
 			, m_buffer({0})
 			, m_op_table({0})
@@ -81,12 +75,12 @@ namespace gravel
 		//! @param other	the object to move from
 		//! 
 		template <typename T> 
-		explicit dynamic_value(T&& other) requires IsBaseOf<BaseT, std::decay_t<T>> && (!std::is_lvalue_reference<T>::value) && (MoveConstructible<BaseT> || CopyConstructible<BaseT>)
+		explicit dynamic_value(T&& other) requires IsBaseOf<BaseT, std::decay_t<T>> && (!std::is_lvalue_reference<T>::value) && (properties::moveable || properties::copyable)
 			: m_local(false)
 			, m_buffer({0})
 			, m_op_table({0})
 		{
-			if constexpr (moveable)
+			if constexpr (properties::moveable)
 			{
 				set(std::forward<T>(other));
 			}
@@ -100,7 +94,7 @@ namespace gravel
 		//! Constructor, copy-constructs from another dynamic value
 		//! @param other	the dynamic_value to copy from
 		//! 
-		dynamic_value(const dynamic_value<BaseT, SmallObjectSize>& other) requires CopyConstructible<BaseT>
+		dynamic_value(const dynamic_value<BaseT, PropertiesT>& other) requires properties::copyable
 			: m_local(false)
 			, m_buffer({0})
 			, m_op_table({0})
@@ -113,12 +107,12 @@ namespace gravel
 		//! @param other	the dynamic_value to move from
 		//! @note	other should not be used without having a new value assigned to it first after this function is called
 		//! 
-		dynamic_value(dynamic_value<BaseT, SmallObjectSize>&& other) requires CopyConstructible<BaseT>&& MoveConstructible<BaseT>
+		dynamic_value(dynamic_value<BaseT, PropertiesT>&& other) requires properties::copyable && properties::moveable
 			: m_local(false)
 			, m_buffer({0})
 			, m_op_table({0})
 		{
-			if constexpr (moveable)
+			if constexpr (properties::moveable)
 			{
 				do_move(std::move(other));
 			}
@@ -133,8 +127,8 @@ namespace gravel
 		//! @tparam	OtherBaseT	the Base of the other dynamic value, must be the same as BaseT or a child of it
 		//! @param other	the dynamic_value to copy from
 		//! 
-		template <typename OtherBaseT, std::size_t OtherSubSize>
-		dynamic_value(const dynamic_value<OtherBaseT, OtherSubSize>& other) requires IsBaseOf<BaseT, OtherBaseT>&& CopyConstructible<BaseT>
+		template <typename OtherBaseT, typename OtherPropertiesT>
+		dynamic_value(const dynamic_value<OtherBaseT, OtherPropertiesT>& other) requires IsBaseOf<BaseT, OtherBaseT> && properties::copyable
 			: m_local(false)
 			, m_buffer({0})
 			, m_op_table({0})
@@ -148,13 +142,13 @@ namespace gravel
 		//! @param other	the dynamic_value to move from
  		//! @note	other should not be used without having a new value assigned to it first after this function is called
 		//! 
-		template <typename OtherBaseT, std::size_t OtherSubSize>
-		dynamic_value(dynamic_value<OtherBaseT, OtherSubSize>&& other) requires IsBaseOf<BaseT, OtherBaseT> && (MoveConstructible<BaseT> || CopyConstructible<BaseT>)
+		template <typename OtherBaseT, typename OtherPropertiesT>
+		dynamic_value(dynamic_value<OtherBaseT, OtherPropertiesT>&& other) requires IsBaseOf<BaseT, OtherBaseT> && (properties::moveable || properties::copyable)
 			: m_local(false)
 			, m_buffer({0})
 			, m_op_table({0})
 		{
-			if constexpr (moveable)
+			if constexpr (properties::moveable)
 			{
 				do_move(std::move(other));
 			}
@@ -181,9 +175,9 @@ namespace gravel
 		//! @return the created dynamic value
 		//! 
 		template <typename T, typename... ArgT>		
-		static dynamic_value<BaseT, SmallObjectSize> make_emplaced(ArgT&&... arguments) requires IsBaseOf<BaseT, T>&& requires (ArgT&&... args) { T(args...); }
+		static dynamic_value<BaseT, PropertiesT> make_emplaced(ArgT&&... arguments) requires IsBaseOf<BaseT, T>&& requires (ArgT&&... args) { T(std::forward<ArgT>(args)...); }
 		{
-			return dynamic_value<BaseT, SmallObjectSize>(static_cast<T*>(nullptr), std::forward<ArgT>(arguments)...);
+			return dynamic_value<BaseT, PropertiesT>(static_cast<T*>(nullptr), std::forward<ArgT>(arguments)...);
 		}
 
 		//!
@@ -193,7 +187,7 @@ namespace gravel
 		//! @param	args	the arguments to perfectly forward to T's constructor
 		//! 
 		template <typename T, typename... ArgT>
-		void emplace(ArgT&&... arguments) requires IsBaseOf<BaseT, T>&& requires (ArgT&&... args) { T(args...); }
+		void emplace(ArgT&&... arguments) requires IsBaseOf<BaseT, T>&& requires (ArgT&&... args) { T(std::forward<ArgT>(args)...); }
 		{
 			destroy();
 			set_emplace<T>(std::forward<ArgT>(arguments)...);
@@ -206,7 +200,7 @@ namespace gravel
 		//! @return a reference to this
 		//! 
 		template <typename T> 
-		dynamic_value& operator=(const T& other) requires IsBaseOf<BaseT, std::decay_t<T> > && CopyConstructible<BaseT>
+		dynamic_value& operator=(const T& other) requires IsBaseOf<BaseT, std::decay_t<T> > && properties::copyable
 		{
 			destroy();
 			set(other);
@@ -220,11 +214,11 @@ namespace gravel
 		//! @return a reference to this
 		//! 
 		template <typename T> 
-		dynamic_value& operator=(T&& other) requires IsBaseOf<BaseT, std::decay_t<T>> && (!std::is_lvalue_reference<T>::value) && (MoveConstructible<BaseT> || CopyConstructible<BaseT>)
+		dynamic_value& operator=(T&& other) requires IsBaseOf<BaseT, std::decay_t<T>> && (!std::is_lvalue_reference<T>::value) && (properties::moveable || properties::copyable)
 		{
 			using NakedT = std::decay_t<T>;
 			destroy();
-			if constexpr (moveable)
+			if constexpr (properties::moveable)
 			{
 				set<NakedT>(std::forward<T>(other));
 			}
@@ -241,7 +235,7 @@ namespace gravel
 		//! @param other	the dynamic_value to copy from
 		//! @return a reference to this
 		//! 
-		dynamic_value& operator=(const dynamic_value<BaseT, SmallObjectSize>& other) requires CopyConstructible<BaseT>
+		dynamic_value& operator=(const dynamic_value<BaseT, PropertiesT>& other) requires properties::copyable
 		{
 			destroy();
 			do_clone(other);
@@ -254,10 +248,10 @@ namespace gravel
 		//! @note	other should not be used without having a new value assigned to it first after this function is called
 		//! @return a reference to this
 		//! 
-		dynamic_value& operator=(dynamic_value<BaseT, SmallObjectSize>&& other) noexcept requires MoveConstructible<BaseT> || CopyConstructible<BaseT>
+		dynamic_value& operator=(dynamic_value<BaseT, PropertiesT>&& other) noexcept requires properties::coyable || properties::moveable
 		{
 			destroy();
-			if constexpr (moveable)
+			if constexpr (properties::moveable)
 			{
 				do_move(std::move(other));
 			}
@@ -274,8 +268,8 @@ namespace gravel
 		//! @param other	the dynamic_value to copy from
 		//! @return a reference to this
 		//! 
-		template <typename OtherBaseT, std::size_t OtherSubSize>
-		dynamic_value& operator=(const dynamic_value<OtherBaseT, OtherSubSize>& other)  requires IsBaseOf<BaseT, OtherBaseT> && CopyConstructible<BaseT>
+		template <typename OtherBaseT, typename OtherPropertiesT>
+		dynamic_value& operator=(const dynamic_value<OtherBaseT, OtherPropertiesT>& other)  requires IsBaseOf<BaseT, OtherBaseT> && properties::copyable
 		{
 			destroy();
 			do_clone(other);
@@ -289,11 +283,11 @@ namespace gravel
 		//! @note	other should not be used without having a new value assigned to it first after this function is called
 		//! @return a reference to this
 		//! 
-		template <typename OtherBaseT, std::size_t OtherSubSize>
-		dynamic_value& operator=(dynamic_value<OtherBaseT, OtherSubSize>&& other)  requires IsBaseOf<BaseT, OtherBaseT> && (MoveConstructible<BaseT> || CopyConstructible<BaseT>)
+		template <typename OtherBaseT, typename OtherPropertiesT>
+		dynamic_value& operator=(dynamic_value<OtherBaseT, OtherPropertiesT>&& other)  requires IsBaseOf<BaseT, OtherBaseT> && (properties::moveable || properties::copyable)
 		{
 			destroy();
-			if constexpr (moveable)
+			if constexpr (properties::moveable)
 			{
 				do_move(std::move(other));
 			}
@@ -378,7 +372,7 @@ namespace gravel
 
 		using IOperationsTable = detail::IOperationsTable<BaseT>;
 
-		const static std::size_t op_table_size = (CopyConstructible<BaseT> || MoveConstructible<BaseT>) ? sizeof(IOperationsTable) : 0;
+		const static std::size_t op_table_size = (properties::copyable || properties::moveable) ? sizeof(IOperationsTable) : 0;
 
 		// Note: Dummy us used to differentiate between the main constructors 
 		//       and this emplacement constructor. Kept private to keep a nice API
@@ -391,7 +385,7 @@ namespace gravel
 		template <typename T, typename... ArgT>
 		void set_emplace(ArgT&&... arguments) requires IsBaseOf<BaseT, std::decay_t<T>>
 		{
-			if constexpr (sizeof(T) > small_object_size)
+			if constexpr (sizeof(T) > properties::small_buffer_size)
 			{
 				m_local = false;
 				T* created = new T(std::forward<ArgT>(arguments)...);
@@ -404,7 +398,7 @@ namespace gravel
 			}
 			if constexpr (op_table_size > 0)
 			{
-				new (m_op_table.data()) detail::OperationsTable<BaseT, T>();
+				new (m_op_table.data()) detail::OperationsTable<BaseT, T, properties>();
 			}
 		}
 
@@ -412,7 +406,7 @@ namespace gravel
 		void set(T&& value) requires IsBaseOf<BaseT, std::decay_t<T>>
 		{
 			using BareT = std::decay_t<T>;
-			if constexpr (sizeof(T) > small_object_size)
+			if constexpr (sizeof(T) > properties::small_buffer_size)
 			{
 				m_local = false;
 				BareT* created = new BareT(std::forward<T>(value));
@@ -425,19 +419,19 @@ namespace gravel
 			}
 			if constexpr (op_table_size > 0)
 			{
-				new (m_op_table.data()) detail::OperationsTable<BaseT, BareT>();
+				new (m_op_table.data()) detail::OperationsTable<BaseT, BareT, properties>();
 			}
 		}
 
-		template <typename OtherBaseT, std::size_t OtherSubSize> requires CopyConstructible<BaseT> && IsBaseOf<BaseT, OtherBaseT>
-		void do_clone(const dynamic_value<OtherBaseT, OtherSubSize>& other)
+		template <typename OtherBaseT, typename OtherPropertiesT> requires properties::copyable && IsBaseOf<BaseT, OtherBaseT>
+		void do_clone(const dynamic_value<OtherBaseT, OtherPropertiesT>& other)
 		{
 			const auto& optable = other.get_op_table();
 			optable.clone(std::span<uint8_t>(m_buffer), std::span<uint8_t>(m_op_table), m_local, &other.get());
 		}
 
-		template <typename OtherBaseT, std::size_t OtherSubSize> requires MoveConstructible<BaseT> && IsBaseOf<BaseT, OtherBaseT>
-		void do_move(dynamic_value<OtherBaseT, OtherSubSize>&& other)
+		template <typename OtherBaseT, typename OtherPropertiesT> requires properties::moveable && IsBaseOf<BaseT, OtherBaseT>
+		void do_move(dynamic_value<OtherBaseT, OtherPropertiesT>&& other)
 		{
 			const auto& optable = other.get_op_table();
 			optable.move(std::span<uint8_t>(m_buffer), std::span<uint8_t>(m_op_table), m_local, &other.get(), other.m_local);
@@ -461,7 +455,7 @@ namespace gravel
 			}
 		}
 
-		alignas(BaseT) std::array<std::uint8_t, small_object_size> m_buffer;
+		alignas(BaseT) std::array<std::uint8_t, properties::small_buffer_size> m_buffer;
 		alignas(IOperationsTable) std::array<std::uint8_t, op_table_size> m_op_table;
 		bool m_local;
 	};
@@ -474,10 +468,10 @@ namespace gravel
 	//! @tparam ArgT	the types of the arguemnts sent to ActualTs constructor
 	//! @param arguments	the arguemtns to construct ArgT with, will be perfectly forwarded
 	//! 
-	template<typename BaseT, typename ActualT = BaseT, size_t SmallObjectSize = default_buffer_size<BaseT>(), typename... ArgT>
-	dynamic_value<BaseT, SmallObjectSize> make_dynamic_value(ArgT&&... arguments) requires IsBaseOf<BaseT, ActualT>&& requires (ArgT&&... args) { ActualT(args...); }
+	template<typename BaseT, typename ActualT = BaseT, typename PropertiesT = Properties<>, typename... ArgT>
+	dynamic_value<BaseT, PropertiesT> make_dynamic_value(ArgT&&... arguments) requires IsBaseOf<BaseT, ActualT>&& requires (ArgT&&... args) { ActualT(std::forward<ArgT>(args)...); }
 	{
-		return dynamic_value<BaseT, SmallObjectSize>::template make_emplaced<ActualT>(std::forward<ArgT>(arguments)...);
+		return dynamic_value<BaseT, PropertiesT>::template make_emplaced<ActualT>(std::forward<ArgT>(arguments)...);
 	}
 
 	// Deduction Guides
